@@ -1,0 +1,150 @@
+library(DBI)
+library(RSQLite)
+
+con <- dbConnect(SQLite(),'wooldridge2.db')
+dbListTables(con)
+
+wpull <- function(strinput){
+  con <- dbConnect(SQLite(),'wooldridge2.db')
+  dbListTables(con)
+  dt <- dbReadTable(con,'bwght')
+  dt <- data.table(bwght)
+  dbReadTable(con,'bwght_labels')
+  
+  return(dt)
+}
+bwght <- dbReadTable(con,'bwght')
+bwght <- data.table(bwght)
+dbReadTable(con,'bwght_labels')
+
+rm(con)
+
+tabn <- 'bwght'
+?paste
+
+?scale
+paste(tabn,'labels',sep="_")
+
+wpull <- function(tablename){
+  con <- DBI::dbConnect(RSQLite::SQLite(),'wooldridge2.db')
+  dt <- DBI::dbReadTable(con,tablename)
+  dt <- data.table(dt)
+  print(DBI::dbReadTable(con,paste(tablename,'labels',sep='_')))
+  DBI::dbDisconnect(con)
+  rm(con)
+  return(dt)
+}
+bwght <- wpull('bwght')
+
+#    index variable.name  type format                 variable.label
+# 1      0        faminc float  %9.0g     1988 family income, $1000s
+# 2      1        cigtax float  %9.0g   cig. tax in home state, 1988
+# 3      2      cigprice float  %9.0g cig. price in home state, 1988
+# 4      3         bwght   int  %8.0g           birth weight, ounces
+# 5      4      fatheduc  byte  %8.0g           father's yrs of educ
+# 6      5      motheduc  byte  %8.0g           mother's yrs of educ
+# 7      6        parity  byte  %8.0g           birth order of child
+# 8      7          male  byte  %8.0g               =1 if male child
+# 9      8         white  byte  %8.0g                    =1 if white
+# 10     9          cigs  byte  %8.0g  cigs smked per day while preg
+
+head(bwght)
+summary(bwght)
+
+bwght$smokes <- as.numeric(bwght$cigs>0)
+head(bwght)
+summary(bwght$smokes)
+bwght[,lapply(.SD,mean),by=smokes]
+(120.0612-111.1462)/111.1462
+
+ggplot(bwght,aes(x=cigs,y=bwght)) + 
+  geom_point() + 
+  scale_x_continuous('Cigarettes smoked per day') +
+  scale_y_continuous('Birthweight (oz)')
+
+b1 <- cov(bwght$bwght,bwght$cigs)/var(bwght$cigs)
+b0 <- mean(bwght$bwght)-b1*mean(bwght$cigs)
+b0
+b1
+## 1 cig per day ==> 0.5 oz decrease in bwght
+## 1 cig per day is associated with 0.5 oz decrease in bwght
+## 1 cig per day ==> 0.5 oz decrease in bwght on average
+
+## 1 pack per day ==> 10 oz decrease in bwght
+bwght~cigs
+model <- lm(bwght~cigs,data=bwght)
+model
+coef(model)
+summary(model)
+
+ggplot(bwght,aes(x=cigs,y=bwght)) + 
+  geom_point() + 
+  geom_line(aes(y=predict(model)),color='red') + 
+  scale_x_continuous('Cigarettes smoked per day') +
+  scale_y_continuous('Birthweight (oz)')
+
+model2 <- lm(bwght~cigs+faminc,data=bwght)
+summary(model2)
+
+## A 1 cig per day increase in smoking ==> 0.46 oz decrease in bwght 
+###    controlling for family income (keeping family income constant)
+
+
+model3 <- lm(bwght~cigs+faminc+male+white+motheduc+fatheduc,data=bwght)
+summary(model3)
+
+model3 <- lm(bwght~cigs+male+white,data=bwght)
+summary(model3)
+
+## If a child is male, the child is likely to be 3 oz heavier than a not-male child
+
+## On average male babies are 3.05 oz heavier than female babies
+##    controlling for cigarettes and race
+bwght$cigsq <- bwght$cigs^2
+model4 <- lm(bwght~cigs+cigsq,data=bwght)
+## DONT DO THIS: model4 <- lm(bwght~cigs+cigs^2,data=bwght)
+model4 <- lm(bwght~cigs+I(cigs^2),data=bwght)
+summary(model4)
+
+ggplot(bwght,aes(x=cigs,y=bwght)) + 
+  geom_point() + 
+  geom_line(aes(y=predict(model)),color='red') +
+  geom_line(aes(y=predict(model4)),color='blue') +
+  scale_x_continuous('Cigarettes smoked per day') +
+  scale_y_continuous('Birthweight (oz)')
+
+-0.858407+2*0.013551*0   ## 0.85 oz decrease per cigarette for smoking cig=1
+-0.858407+2*0.013551*20 ## 0.32 oz decrease per cigarette for smoking cig=21
+-0.858407+2*0.013551*50 ## Model is bad out here
+
+
+model5 <- lm(log(bwght)~cigs,data=bwght)
+summary(model5)
+
+# a 1 cig increase ==> 0.45% decrease in child weight
+# a 1 pack increase ==> 8.98% decrease in child weight
+0.0044907*20
+ggplot(bwght,aes(x=cigs,y=bwght)) + 
+  geom_point() + 
+  geom_line(aes(y=predict(model)),color='red') +
+  geom_line(aes(y=exp(predict(model5))),color='blue') +
+  scale_x_continuous('Cigarettes smoked per day') +
+  scale_y_continuous('Birthweight (oz)')
+
+
+model6 <- lm(log(bwght)~smokes+male+white+white:male+smokes:white,data=bwght)
+summary(model6)
+
+model6 <- lm(log(bwght)~smokes+male+white+smokes:male+smokes:white,data=bwght)
+summary(model6)
+
+
+# Being a smoker ==> 7.5% decrease in birthweight controlling for male,race
+
+
+model7 <- lm(bwght~faminc+male+white+motheduc+fatheduc,data=bwght[smokes==1])
+summary(model7)
+model8 <- lm(bwght~faminc+male+white+motheduc+fatheduc,data=bwght[smokes==0])
+summary(model8)
+coef(model7)
+coef(model8)
