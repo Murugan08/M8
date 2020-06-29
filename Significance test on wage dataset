@@ -1,0 +1,95 @@
+wpull <- function(wage1){
+  con <- DBI::dbConnect(RSQLite::SQLite(),'wooldridge2.db')
+  dt <- DBI::dbReadTable(con,wage1)
+  dt <- data.table(dt)
+  print(DBI::dbReadTable(con,paste(wage1,'labels',sep='_')))
+  DBI::dbDisconnect(con)
+  rm(con)
+  return(dt)
+}
+wage1 <- wpull('wage1')
+summary(wage1)
+head(wage1)
+
+modela <- lm(wage~educ+exper+tenure,data=wage1)
+
+summary(modela) 
+# Coefficient on education is significant even at the 0.1% level
+# Coefficient on experience is significant at the 10% level but not at the 5% level
+confint(modela)
+tidy(modela)
+tidy(modela,conf.int=TRUE)
+
+# test b1=0.5
+tstat <- (0.60268-0.5)/0.05148
+tstat
+# tstat 1.99 > 1.96 ==> reject the null at the 5% level but not at the 1% level
+
+# test b2=b3=0
+modelb <- lm(wage~educ,data=wage1)
+anova(modelb,modela)
+# pvalue = 0 ==> reject the null at the 0.1% level
+
+library(sandwich)
+vcov(modela)
+vcovHC(modela)
+# test b1=0.5
+tstat <- (0.60268-0.5)/sqrt(0.0038876651)
+tstat
+# tstat 1.64 < 1.65 ==> cannot reject the null at the 10% level
+lmtest::coeftest(modela,vcov=vcovHC)
+lmtest::coefci(modela,vcov=vcovHC)
+
+tidy(modela,conf.int=TRUE)
+sqrt(diag(vcovHC(modela)))
+tidyg <- function(model,vc=vcov(model),conf.int=FALSE,conf.level=0.95){
+  dt <- tidy(model,conf.int=conf.int,conf.level=conf.level)
+  dt$std.error <- sqrt(diag(vc))
+  dt$statistic <- dt$estimate/dt$std.error
+  dt$p.value <- 2*pnorm(-abs(dt$statistic))
+  if(conf.int){
+    dt$conf.low <- dt$estimate+qnorm((1-conf.level)/2)*dt$std.error
+    dt$conf.high <- dt$estimate-qnorm((1-conf.level)/2)*dt$std.error
+  }
+  return(dt)
+}
+tidyw <- function(model,...){
+  return(tidyg(model,vc=sandwich::vcovHC(model),...))
+}
+
+tidyw(modela)
+tidyw(modela,conf.int=TRUE)
+
+
+## Complicated hypothesis testing
+## Ho: b1=b3
+modela <- lm(wage~educ+exper+tenure,data=wage1)
+summary(modela)
+vcov(modela)
+
+vara <- 0.0026499074+0.0004720348-2*-0.0001263464
+vara
+tstat <- (0.60268-0.17002)/sqrt(0.003374635)
+tstat
+summary(modela)
+modeld <- lm(wage~I(educ+tenure)+exper+I(-tenure),data=wage1)
+summary(modeld)
+modelc <- lm(wage~educ+exper+I(educ+tenure),data=wage1)
+summary(modelc)
+.60-.17
+
+## Weighted least squares estimation
+
+modela <- lm(wage~educ+exper+tenure,data=wage1)
+augment(modela)
+wage1$newy <- log(augment(modela)$.resid^2)
+modeld <- lm(newy~educ+exper+tenure,data=wage1)
+wage1$h <- exp(augment(modeld)$.fitted)
+modele <- lm(wage~educ+exper+tenure,weights=1/h,data=wage1)
+
+# Optimal model given heteroskedasticity in the data
+summary(modele)
+modelf <- lm(wage~educ,weights=1/h,data=wage1)
+anova(modelf,modele)  # AnOVa test corrected for heteroskedasticity
+
+tidyw(modele)
